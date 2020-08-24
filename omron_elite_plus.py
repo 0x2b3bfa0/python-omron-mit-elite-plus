@@ -6,7 +6,7 @@ from operator import xor
 from functools import reduce
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-
+from elevate import elevate
 
 class ElitePlus():
     """MIT Elite Plus HEM-7301-ITKE7 USB blood pressure meter 0590:0028."""
@@ -141,6 +141,7 @@ class ElitePlus():
 
 
 if __name__ == "__main__":
+    elevate()  # Run as superuser
     with ElitePlus() as meter:
         for measurement in meter.measurements():
             print(",".join([
