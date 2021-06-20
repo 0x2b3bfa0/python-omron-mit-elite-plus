@@ -15,3 +15,7 @@ cd python-omron-mit-elite-plus
 pip install -r requirements.txt
 python omron_mit_elite_plus.py
 ```
+
+## Alternatives
+
+* [UBPM - Universal Blood Pressure Manager](https://codeberg.org/LazyT/ubpm), a [Qt](https://qt.io) graphical application for managing your blood pressure meter, compatible with macOS, Linux and Windows.
