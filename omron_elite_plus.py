@@ -8,11 +8,17 @@ from datetime import datetime, timedelta
 import argparse
 import errno
 
-class BPMNotFoundError(Exception): ...
+
+class BPMNotFoundError(Exception):
+    ...
+
+
 DATETIME_FORMAT = "%Y-%d-%m %H:%M:%S"
 
-class ElitePlus():
+
+class ElitePlus:
     """MIT Elite Plus HEM-7301-ITKE7 USB blood pressure meter 0590:0028."""
+
     @dataclass
     class Measurement:
         time: datetime
@@ -28,38 +34,37 @@ class ElitePlus():
         self.vendor, self.product, self.timeout = vendor, product, timeout
         self.device = self.detect(self.vendor, self.product)
         if not self.device:
-            raise BPMNotFoundError(f"Blood pressure monitor with USB vendor id '{vendor:>04x}' and product id '{product:>04x}' not found.".format(vendor, product))
+            raise BPMNotFoundError(
+                f"Blood pressure monitor with USB vendor id '{vendor:>04x}' and product id '{product:>04x}' not found."
+            )
         self.connect()
 
     @staticmethod
     def detect(vendor, product):
         """Detects the device."""
-        return usb.core.find(
-            idProduct=product,
-            idVendor=vendor
-            )
+        return usb.core.find(idProduct=product, idVendor=vendor)
 
     def connect(self):
         """Connects to the device."""
         if self.device.is_kernel_driver_active(0):
             self.device.detach_kernel_driver(0)
         self.device.set_configuration()
-        #usb.util.claim_interface(device, None)
+        # usb.util.claim_interface(device, None)
 
         request_type = usb.util.build_request_type(
             recipient=usb.util.CTRL_RECIPIENT_INTERFACE,
             type=usb.util.CTRL_TYPE_CLASS,
-            direction=usb.util.CTRL_OUT
-            )
-        
+            direction=usb.util.CTRL_OUT,
+        )
+
         self.device.ctrl_transfer(
             timeout=int(1000 * self.timeout),
             bmRequestType=request_type,
             data_or_wLength=(0, 0),
             wValue=0x300,
             bRequest=9,
-            wIndex=0
-            )
+            wIndex=0,
+        )
 
     def read(self):
         """Reads data from the device."""
@@ -68,10 +73,10 @@ class ElitePlus():
             chunk = bytes(self.device.read(0x81, 8, int(1000 * self.timeout)))
             if not chunk or chunk[0] not in range(1, 8):
                 return None
-            data += chunk[1:chunk[0]+1]
+            data += chunk[1 : chunk[0] + 1]
             if chunk[0] < 7:
                 break
-        #assert reduce(xor, data[2:], 0) == 0
+        # assert reduce(xor, data[2:], 0) == 0
         if data[0:2] == b"OK":
             return data[2:-1]
 
@@ -94,8 +99,8 @@ class ElitePlus():
         except usb.core.USBError:
             pass
         for _ in range(10):
-            self.write(7 * b'\x00')
-            self.write(7 * b'\x00')
+            self.write(7 * b"\x00")
+            self.write(7 * b"\x00")
             try:
                 response = self.read()
             except usb.core.USBError:
@@ -123,7 +128,7 @@ class ElitePlus():
         """Retrieves the number of measurements stored on the device memory."""
         return self.command(b"CNT00")[2]
 
-    def measurements(self, correct_time:bool=True):
+    def measurements(self, correct_time: bool = True):
         """Retrieves all the measurements stored on the device memory.
         If correct_time is true, an offset of the computer's time minus the
         monitor's time will be applied to each record to correct for the clock
@@ -142,17 +147,12 @@ class ElitePlus():
                 time = None
 
             systolic, diastolic, pulse = record[9:12]
-            record = self.Measurement(
-                time,
-                systolic,
-                diastolic,
-                pulse
-            )
+            record = self.Measurement(time, systolic, diastolic, pulse)
 
             if correct_time and time:
-                 """Correct the time on the monitor with the computer's own
-                 time offset if needed."""
-                 record.time += timedelta(seconds=offset)
+                """Correct the time on the monitor with the computer's own
+                time offset if needed."""
+                record.time += timedelta(seconds=offset)
 
             yield record
 
@@ -166,7 +166,8 @@ class ElitePlus():
     def __exit__(self, *exception):
         self.shutdown()
 
-def main(settings:argparse.Namespace):
+
+def main(settings: argparse.Namespace):
     """Attempts to open the device and perform the required actions."""
     try:
         with ElitePlus() as meter:
@@ -174,7 +175,7 @@ def main(settings:argparse.Namespace):
                 # Request the current time from the monitor.
                 print("Monitor's inbuilt clock")
                 print(meter.clock())
-            
+
             if settings.number:
                 # Request the number of records stored.
                 print("Number of records on device")
@@ -184,49 +185,59 @@ def main(settings:argparse.Namespace):
                 # Request all measurements from the monitor.
                 print("Date,Systolic,Diastolic,Pulse")
                 for measurement in meter.measurements(settings.correct_times):
-                    print(",".join([
-                        str(measurement.time.strftime(DATETIME_FORMAT) if measurement.time else ""),
-                        str(measurement.systolic),
-                        str(measurement.diastolic),
-                        str(measurement.pulse)
-                    ]))
-            
+                    print(
+                        ",".join(
+                            [
+                                str(
+                                    measurement.time.strftime(DATETIME_FORMAT)
+                                    if measurement.time
+                                    else ""
+                                ),
+                                str(measurement.systolic),
+                                str(measurement.diastolic),
+                                str(measurement.pulse),
+                            ]
+                        )
+                    )
+
             if settings.clear:
                 # Request that the monitor delete its internal data.
                 print("Requesting to clear internal data")
                 meter.clear()
-            
+
     except BPMNotFoundError as e:
         print(e)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Tool for connecting to Omron branded blood pressure monitors"
     )
     parser.add_argument(
-        "-r", "--read",
-        help="Read all data stored on the monitor.",
-        action="store_true"
+        "-r", "--read", help="Read all data stored on the monitor.", action="store_true"
     )
     parser.add_argument(
         "--correct-times",
         help="When reading, adds an offset from the computer's time to the monitor's time for each record to correct for the date and time on the monitor not being set correctly.",
-        action="store_true"
+        action="store_true",
     )
     parser.add_argument(
-        "-c", "--clear",
+        "-c",
+        "--clear",
         help="Request that the monitor clear its internal memory after reading.",
-        action="store_true"
+        action="store_true",
     )
     parser.add_argument(
-        "-t", "--time",
+        "-t",
+        "--time",
         help="Get the current time from the monitor.",
-        action="store_true"
+        action="store_true",
     )
     parser.add_argument(
-        "-n", "--number",
+        "-n",
+        "--number",
         help="Get the number of records stored on the monitor.",
-        action="store_true"
+        action="store_true",
     )
     # parser.add_argument(
     #     "-o", "--output",
@@ -235,6 +246,7 @@ def parse_args() -> argparse.Namespace:
     # )
 
     return parser.parse_args()
+
 
 if __name__ == "__main__":
     args = parse_args()
@@ -251,8 +263,9 @@ if __name__ == "__main__":
 
             # Only import now as not needed if permissions are otherwise ok
             import elevate
+
             elevate.elevate()
-            
+
             main(args)
         else:
             # Some other error that we don't know how to deal with.
