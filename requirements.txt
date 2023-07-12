@@ -1,4 +1,3 @@
-dataclasses==0.7
+dataclasses==0.6
 elevate==0.1.3
-pkg-resources==0.0.0
-pyusb==1.0.2
+pyusb==1.2.1

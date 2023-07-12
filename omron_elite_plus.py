@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-
+"""omron_elite_plus.py
+Script for connecting to Omron blood pressure monitors over USB.
+"""
 import usb
-
-from operator import xor
-from functools import reduce
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from elevate import elevate
+import argparse
+import errno
+
+class BPMNotFoundError(Exception): ...
+DATETIME_FORMAT = "%Y-%d-%m %H:%M:%S"
 
 class ElitePlus():
     """MIT Elite Plus HEM-7301-ITKE7 USB blood pressure meter 0590:0028."""
@@ -17,10 +20,15 @@ class ElitePlus():
         diastolic: int
         pulse: int
 
-    def __init__(self, vendor=0x0590, product=0x0028, timeout=0.5):
+    def __init__(self, vendor=0x0590, product=0x0028, timeout=4):
+        """Initialises the device connection.
+        Clearing may need a larger timeout compared to other options from
+        experience.
+        """
         self.vendor, self.product, self.timeout = vendor, product, timeout
         self.device = self.detect(self.vendor, self.product)
-        assert self.device
+        if not self.device:
+            raise BPMNotFoundError(f"Blood pressure monitor with USB vendor id '{vendor:>04x}' and product id '{product:>04x}' not found.".format(vendor, product))
         self.connect()
 
     @staticmethod
@@ -43,6 +51,7 @@ class ElitePlus():
             type=usb.util.CTRL_TYPE_CLASS,
             direction=usb.util.CTRL_OUT
             )
+        
         self.device.ctrl_transfer(
             timeout=int(1000 * self.timeout),
             bmRequestType=request_type,
@@ -139,16 +148,90 @@ class ElitePlus():
     def __exit__(self, *exception):
         self.shutdown()
 
+def main(settings:argparse.Namespace):
+    """Attempts to open the device and perform the required actions."""
+    try:
+        with ElitePlus() as meter:
+            if settings.time:
+                # Request the current time from the monitor.
+                print("Monitor's inbuilt clock")
+                print(meter.clock())
+            
+            if settings.number:
+                # Request the number of records stored.
+                print("Number of records on device")
+                print(meter.count())
+
+            if settings.read:
+                # Request all measurements from the monitor.
+                print("Date,Systolic,Diastolic,Pulse")
+                for measurement in meter.measurements():
+                    print(",".join([
+                        str(measurement.time.strftime(DATETIME_FORMAT) if measurement.time else ""),
+                        str(measurement.systolic),
+                        str(measurement.diastolic),
+                        str(measurement.pulse)
+                    ]))
+            
+            if settings.clear:
+                # Request that the monitor delete its internal data.
+                print("Requesting to clear internal data")
+                meter.clear()
+            
+    except BPMNotFoundError as e:
+        print(e)
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        "Blood pressure monitor connector",
+        "Tool for connecting to Omron branded blood pressure monitors"
+    )
+    parser.add_argument(
+        "-r", "--read",
+        help="Read all data stored on the monitor.",
+        action="store_true"
+    )
+    parser.add_argument(
+        "-c", "--clear",
+        help="Request that the monitor clear its internal memory after reading.",
+        action="store_true"
+    )
+    parser.add_argument(
+        "-t", "--time",
+        help="Get the current time from the monitor.",
+        action="store_true"
+    )
+    parser.add_argument(
+        "-n", "--number",
+        help="Get the number of records stored on the monitor.",
+        action="store_true"
+    )
+    # parser.add_argument(
+    #     "-o", "--output",
+    #     help="Write the results to the provided file instead of to the console.",
+    #     type=str,
+    # )
+
+    return parser.parse_args()
 
 if __name__ == "__main__":
-    elevate()  # Run as superuser
-    with ElitePlus() as meter:
-        for measurement in meter.measurements():
-            print(",".join([
-                str(measurement.time.replace(microsecond=0).isoformat().replace("T", " ")),
-                str(measurement.systolic),
-                str(measurement.diastolic),
-                str(measurement.pulse)
-                ]))
-        meter.clear()
+    args = parse_args()
+    print(args)
+    try:
+        # Attempt to run as the current user.
+        main(args)
+    except usb.core.USBError as e:
+        if e.errno == errno.EACCES:
+            # Running as the current user failed. Attempt to run as the root user.
+            print("Could not open the USB connection as:")
+            print(f"    {e}")
+            print("Will try to run as root.")
 
+            # Only import now as not needed if permissions are otherwise ok
+            import elevate
+            elevate.elevate()
+            
+            main(args)
+        else:
+            # Some other error that we don't know how to deal with.
+            raise e
