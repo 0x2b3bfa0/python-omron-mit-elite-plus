@@ -123,20 +123,38 @@ class ElitePlus():
         """Retrieves the number of measurements stored on the device memory."""
         return self.command(b"CNT00")[2]
 
-    def measurements(self):
-        """Retrieves all the measurements stored on the device memory."""
-        offset = (datetime.now() - self.clock()).total_seconds()
-        for index in range(self.count()):
-            record = self.command(b"MES\x00\x00", bytes([index]) * 2)
-            time = datetime(2000 + record[1], *record[2:7])
-            systolic, diastolic, pulse = record[9:12]
+    def measurements(self, correct_time:bool=True):
+        """Retrieves all the measurements stored on the device memory.
+        If correct_time is true, an offset of the computer's time minus the
+        monitor's time will be applied to each record to correct for the clock
+        not being set correctly."""
+        if correct_time:
+            # Calculate the time offset to apply if needed.
+            offset = (datetime.now() - self.clock()).total_seconds()
 
-            yield self.Measurement(
-                time + timedelta(seconds=offset),
+        for index in range(self.count()):
+            # Get each record
+            record = self.command(b"MES\x00\x00", bytes([index]) * 2)
+            try:
+                time = datetime(2000 + record[1], *record[2:7])
+            except ValueError:
+                # Time isn't known / formatted correctly, leave out.
+                time = None
+
+            systolic, diastolic, pulse = record[9:12]
+            record = self.Measurement(
+                time,
                 systolic,
                 diastolic,
                 pulse
-                )
+            )
+
+            if correct_time and time:
+                 """Correct the time on the monitor with the computer's own
+                 time offset if needed."""
+                 record.time += timedelta(seconds=offset)
+
+            yield record
 
     def __len__(self):
         return self.count()
@@ -165,7 +183,7 @@ def main(settings:argparse.Namespace):
             if settings.read:
                 # Request all measurements from the monitor.
                 print("Date,Systolic,Diastolic,Pulse")
-                for measurement in meter.measurements():
+                for measurement in meter.measurements(settings.correct_times):
                     print(",".join([
                         str(measurement.time.strftime(DATETIME_FORMAT) if measurement.time else ""),
                         str(measurement.systolic),
@@ -183,12 +201,16 @@ def main(settings:argparse.Namespace):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        "Blood pressure monitor connector",
-        "Tool for connecting to Omron branded blood pressure monitors"
+        description="Tool for connecting to Omron branded blood pressure monitors"
     )
     parser.add_argument(
         "-r", "--read",
         help="Read all data stored on the monitor.",
+        action="store_true"
+    )
+    parser.add_argument(
+        "--correct-times",
+        help="When reading, adds an offset from the computer's time to the monitor's time for each record to correct for the date and time on the monitor not being set correctly.",
         action="store_true"
     )
     parser.add_argument(
