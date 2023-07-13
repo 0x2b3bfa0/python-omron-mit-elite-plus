@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 """omron_elite_plus.py
 Script for connecting to Omron blood pressure monitors over USB.
+
+Originally based on
+https://usb2me.wordpress.com/2013/02/06/omron-mit-elite-plus-hem-7301-itke7
+
+Modified and added to by Helio Machado and Jotham Gates
 """
 import usb
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import argparse
 import errno
+import sys
 
 
 class BPMNotFoundError(Exception):
@@ -206,10 +212,11 @@ def main(settings: argparse.Namespace):
                 meter.clear()
 
     except BPMNotFoundError as e:
-        print(e)
+        print(e, file=sys.stderr)
 
 
 def parse_args() -> argparse.Namespace:
+    """Parser for command line arguments and help text."""
     parser = argparse.ArgumentParser(
         description="Tool for connecting to Omron branded blood pressure monitors"
     )
@@ -239,27 +246,28 @@ def parse_args() -> argparse.Namespace:
         help="Get the number of records stored on the monitor.",
         action="store_true",
     )
-    # parser.add_argument(
-    #     "-o", "--output",
-    #     help="Write the results to the provided file instead of to the console.",
-    #     type=str,
-    # )
+    parser.add_argument(
+        "-o",
+        "--output",
+        help="Write the results to the provided file instead of to the console.",
+        type=str,
+    )
 
     return parser.parse_args()
 
 
-if __name__ == "__main__":
-    args = parse_args()
-    print(args)
+def run_as_users():
+    """Attempts to run and connect as the current user. If this fails due to
+    permissions, then attempts to run as root."""
     try:
         # Attempt to run as the current user.
         main(args)
     except usb.core.USBError as e:
         if e.errno == errno.EACCES:
             # Running as the current user failed. Attempt to run as the root user.
-            print("Could not open the USB connection as:")
-            print(f"    {e}")
-            print("Will try to run as root.")
+            print("Could not open the USB connection as:", file=sys.stderr)
+            print(f"    {e}", file=sys.stderr)
+            print("Will try to run as root.", file=sys.stderr)
 
             # Only import now as not needed if permissions are otherwise ok
             import elevate
@@ -270,3 +278,20 @@ if __name__ == "__main__":
         else:
             # Some other error that we don't know how to deal with.
             raise e
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    # print(args)
+    if args.output:
+        # Output file provided.
+        try:
+            with open(args.output, "w") as out_file:
+                sys.stdout = out_file
+                run_as_users()
+        except OSError as e:
+            print(f"Could not open output file '{args.output}' as:", file=sys.stderr)
+            print(f"    {e}", file=sys.stderr)
+    else:
+        # No output file provided. Print to console
+        run_as_users()
