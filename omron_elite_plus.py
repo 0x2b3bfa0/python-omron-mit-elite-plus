@@ -52,8 +52,15 @@ class ElitePlus:
 
     def connect(self):
         """Connects to the device."""
-        if self.device.is_kernel_driver_active(0):
-            self.device.detach_kernel_driver(0)
+        try:
+            if self.device.is_kernel_driver_active(0):
+                self.device.detach_kernel_driver(0)
+        except Exception as e:
+            print(
+                "Checking for kernal driver and detaching failed. Will continue on as if nothing happened."
+            )
+            print(f"    {e}")
+
         self.device.set_configuration()
         # usb.util.claim_interface(device, None)
 
@@ -187,7 +194,7 @@ def main(settings: argparse.Namespace):
                 print("Number of records on device")
                 print(meter.count())
 
-            if settings.read:
+            if not settings.no_read:
                 # Request all measurements from the monitor.
                 print("Date,Systolic,Diastolic,Pulse")
                 for measurement in meter.measurements(settings.correct_times):
@@ -221,7 +228,10 @@ def parse_args() -> argparse.Namespace:
         description="Tool for connecting to Omron branded blood pressure monitors"
     )
     parser.add_argument(
-        "-r", "--read", help="Read all data stored on the monitor.", action="store_true"
+        "-r",
+        "--no-read",
+        help="Do not read all data stored on the monitor. The default action if not provided is to read everything.",
+        action="store_true",
     )
     parser.add_argument(
         "--correct-times",
